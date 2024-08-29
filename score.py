@@ -20,25 +20,25 @@ class App:
         root.title("Pairwise Cross-Score")
 
         root.grid_rowconfigure(0, weight=2)
-        root.grid_rowconfigure(1, weight=1)
+        # root.grid_rowconfigure(1, weight=1)
         root.grid_columnconfigure(0, weight=1)
         root.grid_columnconfigure(1, weight=1)
 
-        #TODO above every image label should be meta info
-        labelL = tk.Label(root, text="<empty>", bg="lightblue")
-        labelL.grid(row=0, column=0, sticky="nsew", padx=(10, 5), pady=10)
-        labelL.bind("<Configure>", lambda event: self.set_and_resize_image(labelL, event))
+        #TODO above every image should be meta info
+        imgDisplayL = tk.Canvas(root, bg="lightblue")
+        imgDisplayL.grid(row=0, column=0, sticky="nsew", padx=(10, 5), pady=10)
+        imgDisplayL.bind("<Configure>", lambda event: self.resize_and_set_image(imgDisplayL, event))
 
-        labelR = tk.Label(root, text="<empty>", bg="lightblue")
-        labelR.grid(row=0, column=1, sticky="nsew", padx=(5, 10), pady=10)
-        labelR.bind("<Configure>", lambda event: self.set_and_resize_image(labelR, event))
+        imgDisplayR = tk.Canvas(root, bg="lightblue")
+        imgDisplayR.grid(row=0, column=1, sticky="nsew", padx=(5, 10), pady=10)
+        imgDisplayR.bind("<Configure>", lambda event: self.resize_and_set_image(imgDisplayR, event))
 
-        frame = tk.Frame(root, bg="lightyellow")
-        frame.grid(row=1, column=0, columnspan=2, sticky="nsew")
+        # frame = tk.Frame(root, bg="lightyellow")
+        # frame.grid(row=1, column=0, columnspan=2, sticky="nsew")
 
         #TODO make this really compact and minimal sized, so the image boxes dont resize during normal operation!
-        label3 = tk.Label(frame, text="ABC", bg="cornsilk")
-        label3.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        # label3 = tk.Label(frame, text="ABC", bg="cornsilk")
+        # label3.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         #TODO make the buttons for manual comparison
 
         root.bind("<s>", lambda event: self.compair_skip())
@@ -47,59 +47,41 @@ class App:
         root.bind("<d>", lambda event: self.compair_right())
 
         self.root = root
-        labelL._image_ref_origin = None
-        labelL._image_ref_tk = None
-        labelR._image_ref_origin = None
-        labelR._image_ref_tk = None
-        self.imgLabelL = labelL
-        self.imgLabelR = labelR
+        imgDisplayL._image_ref_origin = None
+        imgDisplayL._image_ref_tk = None
+        imgDisplayR._image_ref_origin = None
+        imgDisplayR._image_ref_tk = None
+        self.imgDisplayL = imgDisplayL
+        self.imgDisplayR = imgDisplayR
         self.idxL = None
         self.idxR = None
 
-        self.rsc = 0 #REMOVE
-
-    def set_and_resize_image(self, label, event):
-        #REMOVE
-        print(f"=== {self.rsc}")
-        self.rsc += 1
-
-        if hasattr(label, "_skip_resize") and label._skip_resize:
-            label._skip_resize = False
-            print("resize skipped")
-            return
-
+    def resize_and_set_image(self, imgDisplay, event):
+        # get elem width and heigh
         if event:
-            label_width = event.width
-            label_height = event.height
-            print("event resize")
-            # if label_width == label.winfo_width() and label_height == label.winfo_height():
-                # print("resize no change skip")
-                # return
+            elem_width = event.width
+            elem_height = event.height
         else:
-            label_width = label.winfo_width()
-            label_height = label.winfo_height()
-
-        print(f"now size: {label_width}x{label_height}") #REMOVE
-
-        if label._image_ref_origin == None:
-            print("resize no origin skip")
+            elem_width = imgDisplay.winfo_width()
+            elem_height = imgDisplay.winfo_height()
+        # skip resizing if no image set
+        if imgDisplay._image_ref_origin == None:
             return
-        
-        image = label._image_ref_origin.copy()
-
-        scale_width = label_width / image.width
-        scale_height = label_height / image.height
+        # copy original for modification
+        image = imgDisplay._image_ref_origin.copy()
+        # calc the scaling we need to make it fit
+        scale_width = elem_width / image.width
+        scale_height = elem_height / image.height
         scale = min(scale_width, scale_height)
-
+        # calc new with from scaling and resize
         new_width = int(image.width * scale)
         new_height = int(image.height * scale)
         image = image.resize((new_width, new_height), Image.LANCZOS)
-
+        # set image to canvas
         tk_image = ImageTk.PhotoImage(image)
-        label._image_ref_tk = tk_image
-        label.config(image=tk_image, width=label_width, height=label_height)
-        label._skip_resize = True
-        print("resize skipper primed!")
+        imgDisplay._image_ref_tk = tk_image
+        imgDisplay.delete("IMG")
+        imgDisplay.create_image(elem_width / 2, elem_height / 2, image=tk_image, anchor="center", tags="IMG")
 
     def new_compair(self):
         avoidL = -1
@@ -111,12 +93,10 @@ class App:
         self.idxR = random.choice(self.pics)
         while self.idxL[0] == self.idxR[0] or sorted([avoidL, avoidR]) == sorted([self.idxL[0], self.idxR[0]]):
             self.idxR = random.choice(self.pics)
-        print(f"new compair: {self.idxL[0]} . {self.idxR[0]}")
-        self.imgLabelL._image_ref_origin = Image.open(f"{self.pic_path}/{self.idxL[1]}")
-        self.imgLabelR._image_ref_origin = Image.open(f"{self.pic_path}/{self.idxR[1]}")
-        print("new compair requests resizings")
-        self.set_and_resize_image(self.imgLabelL, None)
-        self.set_and_resize_image(self.imgLabelR, None)
+        self.imgDisplayL._image_ref_origin = Image.open(f"{self.pic_path}/{self.idxL[1]}")
+        self.imgDisplayR._image_ref_origin = Image.open(f"{self.pic_path}/{self.idxR[1]}")
+        self.resize_and_set_image(self.imgDisplayL, None)
+        self.resize_and_set_image(self.imgDisplayR, None)
 
     def compair_skip(self):
         self.new_compair()
