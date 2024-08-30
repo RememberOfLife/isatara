@@ -24,14 +24,29 @@ class App:
         root.grid_columnconfigure(0, weight=1)
         root.grid_columnconfigure(1, weight=1)
 
-        #TODO above every image should be meta info
-        imgDisplayL = tk.Canvas(root, bg="lightblue")
-        imgDisplayL.grid(row=0, column=0, sticky="nsew", padx=(10, 5), pady=10)
+        imgFrameL = tk.Frame(root, bg="lightyellow")
+        imgFrameL.grid(row=0, column=0, sticky="nsew")
+
+        imgDisplayL = tk.Canvas(imgFrameL, bg="lightblue")
+        imgDisplayL.pack(expand=True, fill="both", padx=(10, 5), pady=(10, 10))
         imgDisplayL.bind("<Configure>", lambda event: self.resize_and_set_image(imgDisplayL, event))
 
-        imgDisplayR = tk.Canvas(root, bg="lightblue")
-        imgDisplayR.grid(row=0, column=1, sticky="nsew", padx=(5, 10), pady=10)
+        imgLabelContainerL = tk.Frame(imgDisplayL)
+        imgLabelContainerL.place(anchor="ne", relx=1, rely=0)
+        imgLabelL = tk.Label(imgLabelContainerL, bg="black", fg="aliceblue", text="-", padx=3, pady=1)
+        imgLabelL.pack(anchor="e")
+
+        imgFrameR = tk.Frame(root, bg="lightyellow")
+        imgFrameR.grid(row=0, column=1, sticky="nsew")
+
+        imgDisplayR = tk.Canvas(imgFrameR, bg="lightblue")
+        imgDisplayR.pack(expand=True, fill="both", padx=(5, 10), pady=(10, 10))
         imgDisplayR.bind("<Configure>", lambda event: self.resize_and_set_image(imgDisplayR, event))
+
+        imgLabelContainerR = tk.Frame(imgDisplayR)
+        imgLabelContainerR.place(anchor="nw", relx=0, rely=0)
+        imgLabelR = tk.Label(imgLabelContainerR, bg="black", fg="aliceblue", text="-", padx=3, pady=1)
+        imgLabelR.pack(anchor="w")
 
         # frame = tk.Frame(root, bg="lightyellow")
         # frame.grid(row=1, column=0, columnspan=2, sticky="nsew")
@@ -46,6 +61,8 @@ class App:
         root.bind("<a>", lambda event: self.compair_left())
         root.bind("<d>", lambda event: self.compair_right())
 
+        root.bind("<q>", lambda event: exit())
+
         self.root = root
         imgDisplayL._image_ref_origin = None
         imgDisplayL._image_ref_tk = None
@@ -53,6 +70,8 @@ class App:
         imgDisplayR._image_ref_tk = None
         self.imgDisplayL = imgDisplayL
         self.imgDisplayR = imgDisplayR
+        self.imgLabelL = imgLabelL
+        self.imgLabelR = imgLabelR
         self.idxL = None
         self.idxR = None
 
@@ -84,6 +103,7 @@ class App:
         imgDisplay.create_image(elem_width / 2, elem_height / 2, image=tk_image, anchor="center", tags="IMG")
 
     def new_compair(self):
+        # pick new idcs for compair
         avoidL = -1
         avoidR = -1
         if self.idxL and self.idxR:
@@ -93,6 +113,10 @@ class App:
         self.idxR = random.choice(self.pics)
         while self.idxL[0] == self.idxR[0] or sorted([avoidL, avoidR]) == sorted([self.idxL[0], self.idxR[0]]):
             self.idxR = random.choice(self.pics)
+        # set label for img stats
+        self.imgLabelL.config(text=f"{self.idxL[0]}")
+        self.imgLabelR.config(text=f"{self.idxR[0]}")
+        # load and set images
         self.imgDisplayL._image_ref_origin = Image.open(f"{self.pic_path}/{self.idxL[1]}")
         self.imgDisplayR._image_ref_origin = Image.open(f"{self.pic_path}/{self.idxR[1]}")
         self.resize_and_set_image(self.imgDisplayL, None)
