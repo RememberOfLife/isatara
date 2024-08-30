@@ -20,6 +20,17 @@ def PILmeasureText(text_string, font):
 
 class Record:
 
+    class RecordEntry:
+        feature: str
+        idxL: int
+        idxR: int
+        result: str
+        def __init__(self, feature, idxL, idxR, result):
+            self.feature = feature
+            self.idxL = idxL
+            self.idxR = idxR
+            self.result = result
+
     def __init__(self, pics, savepath):
         self.pic_ids = [pic[0] for pic in pics]
         self.savepath = savepath
@@ -32,34 +43,33 @@ class Record:
             with open(self.savepath) as file:
                 for line in file:
                     feature, idxL, idxR, result = line.split(",")
-                    self.entries += [(feature, idxL, idxR, result)]
+                    self.entries += [self.RecordEntry(feature, idxL, idxR, result)]
             self.saved_idx = len(self.entries)
 
     def save(self):
         with open(self.savepath, "a") as file:
             for entry in self.entries[self.saved_idx:]:
-                file.write(f"{entry[0]},{entry[1][0]},{entry[1][1]},{entry[2]}\n")
+                file.write(f"{entry.feature},{entry.idxL},{entry.idxR},{entry.result}\n")
         self.saved_idx = len(self.entries)
 
     def get_new_compair(self, features):
         avoidPair = (-1, -1)
         if len(self.entries) > 0:
-            avoidPair = sorted(self.entries[-1][1])
+            avoidPair = sorted((self.entries[-1].idxL, self.entries[-1].idxR))
         newIdxL = random.choice(self.pic_ids)
         newIdxR = random.choice(self.pic_ids)
         while newIdxL == newIdxR or avoidPair == sorted([newIdxL, newIdxR]):
             newIdxR = random.choice(self.pic_ids)
         return (newIdxL, newIdxR)
 
-    def add_compair_result(self, compair, features, result):
+    def add_compair_result(self, compair, feature, result):
         resultTypes = {
-            "none": ".",
+            "none": "x",
             "both": "=",
             "left": ">",
             "right": "<",
         }
-        for feature in features:
-            self.entries += [(feature, compair, resultTypes[result[feature]])]
+        self.entries += [self.RecordEntry(feature, *compair, resultTypes[result])]
 
 
 class App:
@@ -75,7 +85,7 @@ class App:
             comp_features = ["*"]
         else:
             root.title(f"Pairwise Scoring: {", ".join(comp_features)}")
-            
+
         self.features = comp_features
         
         compairFrame = tk.Frame(root)
@@ -270,8 +280,6 @@ class App:
     def next_feature_or_compair(self, skip=False):
         self.featureIdx += 1
         if self.featureIdx >= len(self.features) or skip:
-            if not skip:
-                self.record.add_compair_result((self.idxL, self.idxR), self.features, self.compairResult)
             self.compairResult = {}
             self.featureIdx = 0
             self.new_compair()
@@ -284,21 +292,25 @@ class App:
     def compair_none(self):
         if self.idxL and self.idxR and self.overlay:
             self.compairResult[self.features[self.featureIdx]] = "none"
+            self.record.add_compair_result((self.idxL, self.idxR), self.features[self.featureIdx], "none")
             self.next_feature_or_compair()
 
     def compair_left(self):
         if self.idxL and self.idxR and self.overlay:
             self.compairResult[self.features[self.featureIdx]] = "left"
+            self.record.add_compair_result((self.idxL, self.idxR), self.features[self.featureIdx], "left")
             self.next_feature_or_compair()
 
     def compair_right(self):
         if self.idxL and self.idxR and self.overlay:
             self.compairResult[self.features[self.featureIdx]] = "right"
+            self.record.add_compair_result((self.idxL, self.idxR), self.features[self.featureIdx], "right")
             self.next_feature_or_compair()
 
     def compair_both(self):
         if self.idxL and self.idxR and self.overlay:
             self.compairResult[self.features[self.featureIdx]] = "both"
+            self.record.add_compair_result((self.idxL, self.idxR), self.features[self.featureIdx], "both")
             self.next_feature_or_compair()
 
 
