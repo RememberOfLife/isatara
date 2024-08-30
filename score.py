@@ -24,20 +24,27 @@ class Record:
         self.pic_ids = [pic[0] for pic in pics]
         self.savepath = savepath
         self.entries = []
+        self.saved_idx = 0
         self.load()
 
     def load(self):
-        #TODO load from savepath
-        pass
+        if os.path.exists(self.savepath):
+            with open(self.savepath) as file:
+                for line in file:
+                    feature, idxL, idxR, result = line.split(",")
+                    self.entries += [(feature, idxL, idxR, result)]
+            self.saved_idx = len(self.entries)
 
     def save(self):
-        #TODO append to savefile
-        pass
+        with open(self.savepath, "a") as file:
+            for entry in self.entries[self.saved_idx:]:
+                file.write(f"{entry[0]},{entry[1][0]},{entry[1][1]},{entry[2]}\n")
+        self.saved_idx = len(self.entries)
 
     def get_new_compair(self, features):
         avoidPair = (-1, -1)
         if len(self.entries) > 0:
-            avoidPair = sorted(self.entries[-1][0])
+            avoidPair = sorted(self.entries[-1][1])
         newIdxL = random.choice(self.pic_ids)
         newIdxR = random.choice(self.pic_ids)
         while newIdxL == newIdxR or avoidPair == sorted([newIdxL, newIdxR]):
@@ -45,9 +52,14 @@ class Record:
         return (newIdxL, newIdxR)
 
     def add_compair_result(self, compair, features, result):
+        resultTypes = {
+            "none": ".",
+            "both": "=",
+            "left": ">",
+            "right": "<",
+        }
         for feature in features:
-            self.entries += [(compair, result[feature])]
-        print(self.entries)
+            self.entries += [(feature, compair, resultTypes[result[feature]])]
 
 
 class App:
@@ -125,6 +137,7 @@ class App:
         #TODO
 
         root.bind("<m>", lambda event: self.switch_mode())
+        root.bind("<Shift_L>", lambda event: self.record.save())
         root.bind("<q>", lambda event: exit())
 
         self.root = root
