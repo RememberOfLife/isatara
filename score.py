@@ -68,13 +68,15 @@ class App:
         self.pics_base = pics_base
         self.pics = dict(pics)
         self.record = Record(pics, record_path)
-        self.features = comp_features
 
         root = tk.Tk()
         if len(comp_features) == 0:
             root.title(f"Pairwise Scoring: <general>")
+            comp_features = ["*"]
         else:
             root.title(f"Pairwise Scoring: {", ".join(comp_features)}")
+            
+        self.features = comp_features
         
         compairFrame = tk.Frame(root)
 
