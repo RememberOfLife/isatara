@@ -12,19 +12,21 @@ import random
 
 class App:
 
-    def __init__(self, pic_path, pics):
-        self.pic_path = pic_path
+    def __init__(self, pics_base, pics, record_path, comp_features):
+        self.pics_base = pics_base
         self.pics = pics
 
         root = tk.Tk()
         root.title("Pairwise Cross-Score")
 
-        root.grid_rowconfigure(0, weight=2)
-        # root.grid_rowconfigure(1, weight=1)
-        root.grid_columnconfigure(0, weight=1)
-        root.grid_columnconfigure(1, weight=1)
+        compairFrame = tk.Frame(root)
 
-        imgFrameL = tk.Frame(root, bg="lightyellow")
+        compairFrame.grid_rowconfigure(0, weight=2)
+        # compairFrame.grid_rowconfigure(1, weight=1)
+        compairFrame.grid_columnconfigure(0, weight=1)
+        compairFrame.grid_columnconfigure(1, weight=1)
+
+        imgFrameL = tk.Frame(compairFrame, bg="lightyellow")
         imgFrameL.grid(row=0, column=0, sticky="nsew")
 
         imgDisplayL = tk.Canvas(imgFrameL, bg="lightblue")
@@ -36,7 +38,7 @@ class App:
         imgLabelL = tk.Label(imgLabelContainerL, bg="black", fg="aliceblue", text="-", padx=3, pady=1)
         imgLabelL.pack(anchor="e")
 
-        imgFrameR = tk.Frame(root, bg="lightyellow")
+        imgFrameR = tk.Frame(compairFrame, bg="lightyellow")
         imgFrameR.grid(row=0, column=1, sticky="nsew")
 
         imgDisplayR = tk.Canvas(imgFrameR, bg="lightblue")
@@ -48,7 +50,7 @@ class App:
         imgLabelR = tk.Label(imgLabelContainerR, bg="black", fg="aliceblue", text="-", padx=3, pady=1)
         imgLabelR.pack(anchor="w")
 
-        # frame = tk.Frame(root, bg="lightyellow")
+        # frame = tk.Frame(compairFrame, bg="lightyellow")
         # frame.grid(row=1, column=0, columnspan=2, sticky="nsew")
 
         #TODO make this really compact and minimal sized, so the image boxes dont resize during normal operation!
@@ -56,14 +58,21 @@ class App:
         # label3.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         #TODO make the buttons for manual comparison
 
-        root.bind("<s>", lambda event: self.compair_skip())
-        root.bind("<w>", lambda event: self.compair_both())
-        root.bind("<a>", lambda event: self.compair_left())
-        root.bind("<d>", lambda event: self.compair_right())
+        compairFrame.bind("<s>", lambda event: self.compair_skip())
+        compairFrame.bind("<w>", lambda event: self.compair_both())
+        compairFrame.bind("<a>", lambda event: self.compair_left())
+        compairFrame.bind("<d>", lambda event: self.compair_right())
 
+        metaevalFrame = tk.Frame(root)
+        tk.Label(metaevalFrame, text="meta-eval").pack()
+        #TODO
+
+        root.bind("<m>", lambda event: self.switch_mode())
         root.bind("<q>", lambda event: exit())
 
         self.root = root
+        self.compairFrame = compairFrame
+        self.metaevalFrame = metaevalFrame
         imgDisplayL._image_ref_origin = None
         imgDisplayL._image_ref_tk = None
         imgDisplayR._image_ref_origin = None
@@ -74,6 +83,27 @@ class App:
         self.imgLabelR = imgLabelR
         self.idxL = None
         self.idxR = None
+        self.switch_mode("compair")
+
+    def switch_mode(self, target_mode=None):
+        if not target_mode:
+            self.mode = {
+                    "compair": "meta-eval",
+                    "meta-eval": "compair",
+                }[self.mode]
+        else:
+            self.mode = target_mode
+        if self.mode == "compair":
+            self.metaevalFrame.forget()
+            self.compairFrame.pack(expand=True, fill="both")
+            self.compairFrame.focus()
+        elif self.mode == "meta-eval":
+            self.compairFrame.forget()
+            self.metaevalFrame.pack(expand=True, fill="both")
+            self.metaevalFrame.focus()
+        else:
+            print("ERROR: unknown mode")
+            exit()
 
     def resize_and_set_image(self, imgDisplay, event):
         # get elem width and heigh
@@ -117,8 +147,8 @@ class App:
         self.imgLabelL.config(text=f"{self.idxL[0]}")
         self.imgLabelR.config(text=f"{self.idxR[0]}")
         # load and set images
-        self.imgDisplayL._image_ref_origin = Image.open(f"{self.pic_path}/{self.idxL[1]}")
-        self.imgDisplayR._image_ref_origin = Image.open(f"{self.pic_path}/{self.idxR[1]}")
+        self.imgDisplayL._image_ref_origin = Image.open(f"{self.pics_base}/{self.idxL[1]}")
+        self.imgDisplayR._image_ref_origin = Image.open(f"{self.pics_base}/{self.idxR[1]}")
         self.resize_and_set_image(self.imgDisplayL, None)
         self.resize_and_set_image(self.imgDisplayR, None)
 
@@ -174,14 +204,18 @@ def get_number_files_list(target_dir):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--pictures", required=True, metavar="PATH", help="path to picture directory")
+    parser.add_argument("--record", required=True, metavar="RECORD", help="record file for comparison log")
+    parser.add_argument("--features", required=False, metavar="FEATURES", help="comma-separated list of comparison features")
     args = parser.parse_args()
     
-    #TODO load the config what is to be compared..
+    pics_base = os.path.abspath(args.pictures)
+    pics = get_number_files_list(pics_base)
 
-    pic_path = os.path.abspath(args.pictures)
-    pics = get_number_files_list(pic_path)
+    record_path = os.path.abspath(args.record)
 
-    app = App(pic_path, pics)
+    comp_features = args.features.split(",") if args.features else []
+
+    app = App(pics_base, pics, record_path, comp_features)
     app.root.mainloop()
 
 
