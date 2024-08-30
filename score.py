@@ -3,21 +3,51 @@
 import argparse
 import tkinter as tk
 from tkinter import PhotoImage
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageFont, ImageTk
 import os
 import re
 from collections import Counter
 import random
 
 
+def PILmeasureText(text_string, font):
+    # https://stackoverflow.com/a/46220683/9263761
+    ascent, descent = font.getmetrics()
+    text_width = font.getmask(text_string).getbbox()[2]
+    text_height = font.getmask(text_string).getbbox()[3] + descent
+    return (text_width, text_height)
+
+
+class Record:
+
+    def __init__(self, pics, savepath):
+        self.savepath = savepath
+
+    def save(self):
+        pass
+
+    def get_new_compair(self, features):
+        pass
+
+    def add_compair_result(self, compair, features, result):
+        pass
+
+
 class App:
 
     def __init__(self, pics_base, pics, record_path, comp_features):
         self.pics_base = pics_base
-        self.pics = pics
+        self.pics = dict(pics)
+        self.record = Record(pics, record_path)
+        self.features = comp_features
 
         root = tk.Tk()
-        root.title("Pairwise Cross-Score")
+        if len(comp_features) == 0:
+            root.title(f"Pairwise Scoring: <general>")
+        else:
+            root.title(f"Pairwise Scoring: {", ".join(comp_features)}")
+        
+
 
         compairFrame = tk.Frame(root)
 
@@ -26,39 +56,34 @@ class App:
         compairFrame.grid_columnconfigure(0, weight=1)
         compairFrame.grid_columnconfigure(1, weight=1)
 
+        #TODO purple border between frames which highlights the relative location of the feature to compare
+
         imgFrameL = tk.Frame(compairFrame, bg="lightyellow")
         imgFrameL.grid(row=0, column=0, sticky="nsew")
 
-        imgDisplayL = tk.Canvas(imgFrameL, bg="lightblue")
+        imgDisplayL = tk.Canvas(imgFrameL, bg="lightblue", highlightthickness=0)
         imgDisplayL.pack(expand=True, fill="both", padx=(10, 5), pady=(10, 10))
         imgDisplayL.bind("<Configure>", lambda event: self.resize_and_set_image(imgDisplayL, event))
 
-        imgLabelContainerL = tk.Frame(imgDisplayL)
-        imgLabelContainerL.place(anchor="ne", relx=1, rely=0)
-        imgLabelL = tk.Label(imgLabelContainerL, bg="black", fg="aliceblue", text="-", padx=3, pady=1)
-        imgLabelL.pack(anchor="e")
+        imgIdxLabelContainerL = tk.Frame(imgDisplayL)
+        imgIdxLabelContainerL.place(anchor="ne", relx=1, rely=0)
+        imgIdxLabelL = tk.Label(imgIdxLabelContainerL, bg="black", fg="aliceblue", text="-", padx=3, pady=1)
+        imgIdxLabelL.pack(anchor="e")
 
         imgFrameR = tk.Frame(compairFrame, bg="lightyellow")
         imgFrameR.grid(row=0, column=1, sticky="nsew")
 
-        imgDisplayR = tk.Canvas(imgFrameR, bg="lightblue")
+        imgDisplayR = tk.Canvas(imgFrameR, bg="lightblue", highlightthickness=0)
         imgDisplayR.pack(expand=True, fill="both", padx=(5, 10), pady=(10, 10))
         imgDisplayR.bind("<Configure>", lambda event: self.resize_and_set_image(imgDisplayR, event))
 
-        imgLabelContainerR = tk.Frame(imgDisplayR)
-        imgLabelContainerR.place(anchor="nw", relx=0, rely=0)
-        imgLabelR = tk.Label(imgLabelContainerR, bg="black", fg="aliceblue", text="-", padx=3, pady=1)
-        imgLabelR.pack(anchor="w")
+        imgIdxLabelContainerR = tk.Frame(imgDisplayR)
+        imgIdxLabelContainerR.place(anchor="nw", relx=0, rely=0)
+        imgIdxLabelR = tk.Label(imgIdxLabelContainerR, bg="black", fg="aliceblue", text="-", padx=3, pady=1)
+        imgIdxLabelR.pack(anchor="w")
 
-        # frame = tk.Frame(compairFrame, bg="lightyellow")
-        # frame.grid(row=1, column=0, columnspan=2, sticky="nsew")
-
-        #TODO make this really compact and minimal sized, so the image boxes dont resize during normal operation!
-        # label3 = tk.Label(frame, text="ABC", bg="cornsilk")
-        # label3.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-        #TODO make the buttons for manual comparison
-
-        compairFrame.bind("<s>", lambda event: self.compair_skip())
+        compairFrame.bind("<r>", lambda event: self.compair_skip())
+        compairFrame.bind("<s>", lambda event: self.compair_none())
         compairFrame.bind("<w>", lambda event: self.compair_both())
         compairFrame.bind("<a>", lambda event: self.compair_left())
         compairFrame.bind("<d>", lambda event: self.compair_right())
@@ -79,10 +104,12 @@ class App:
         imgDisplayR._image_ref_tk = None
         self.imgDisplayL = imgDisplayL
         self.imgDisplayR = imgDisplayR
-        self.imgLabelL = imgLabelL
-        self.imgLabelR = imgLabelR
+        self.imgIdxLabelL = imgIdxLabelL
+        self.imgIdxLabelR = imgIdxLabelR
         self.idxL = None
         self.idxR = None
+        self.featureIdx = 0
+        self.compairResult = {}
         self.switch_mode("compair")
 
     def switch_mode(self, target_mode=None):
@@ -131,44 +158,87 @@ class App:
         imgDisplay._image_ref_tk = tk_image
         imgDisplay.delete("IMG")
         imgDisplay.create_image(elem_width / 2, elem_height / 2, image=tk_image, anchor="center", tags="IMG")
+        self.update_compair_features()
+
+    def update_compair_features(self):
+        for imgDisplay, whichDisplay in [(self.imgDisplayL, "left"), (self.imgDisplayR, "right")]:
+            imgDisplay.delete("FEATURE")
+            imgDisplay._image_ref_tk_features = []
+            if len(self.features) < 2:
+                continue
+            elem_width = imgDisplay.winfo_width()
+            elem_height = imgDisplay.winfo_height()
+            perFeatureHeight = elem_height // len(self.features)
+            for i in range(len(self.features)):
+                featureImg = Image.new("RGBA", (elem_width, perFeatureHeight), (0, 0, 0, 30))
+                featureDraw = ImageDraw.Draw(featureImg)
+                featureFontSize = perFeatureHeight * 0.8
+                featureFont = ImageFont.load_default(featureFontSize)
+                featureStr = f"{self.features[self.featureIdx]}"
+                #TODO looks very good with all caps feature names, but we could also measure the str and center it manually (unreasonable effort though)
+                text_width, text_height = PILmeasureText(featureStr, featureFont)
+                horizontal_fill_ratio = 0.9
+                if text_width > elem_width * horizontal_fill_ratio:
+                    featureFontSize = featureFontSize * ((elem_width * horizontal_fill_ratio) / text_width)
+                    featureFont = ImageFont.load_default(featureFontSize)
+                featureDraw.text((elem_width/2, perFeatureHeight/2), featureStr, anchor="mm", fill=(255, 255, 255, 30), stroke_width=3, stroke_fill=(0, 0, 0, 60), font=featureFont)
+                featureImgTk = ImageTk.PhotoImage(featureImg)
+                imgDisplay._image_ref_tk_features += [featureImgTk]
+                imgDisplay.create_image(0, perFeatureHeight * self.featureIdx, image=featureImgTk, anchor="nw", tags="FEATURE")
 
     def new_compair(self):
         # pick new idcs for compair
         avoidL = -1
         avoidR = -1
         if self.idxL and self.idxR:
-            avoidL = self.idxL[0]
-            avoidR = self.idxR[0]
-        self.idxL = random.choice(self.pics)
-        self.idxR = random.choice(self.pics)
-        while self.idxL[0] == self.idxR[0] or sorted([avoidL, avoidR]) == sorted([self.idxL[0], self.idxR[0]]):
-            self.idxR = random.choice(self.pics)
+            avoidL = self.idxL
+            avoidR = self.idxR
+        self.idxL = random.choice(list(self.pics.keys()))
+        self.idxR = random.choice(list(self.pics.keys()))
+        while self.idxL == self.idxR or sorted([avoidL, avoidR]) == sorted([self.idxL, self.idxR]):
+            self.idxR = random.choice(list(self.pics.keys()))
         # set label for img stats
-        self.imgLabelL.config(text=f"{self.idxL[0]}")
-        self.imgLabelR.config(text=f"{self.idxR[0]}")
+        self.imgIdxLabelL.config(text=f"{self.idxL}")
+        self.imgIdxLabelR.config(text=f"{self.idxR}")
         # load and set images
-        self.imgDisplayL._image_ref_origin = Image.open(f"{self.pics_base}/{self.idxL[1]}")
-        self.imgDisplayR._image_ref_origin = Image.open(f"{self.pics_base}/{self.idxR[1]}")
+        self.imgDisplayL._image_ref_origin = Image.open(f"{self.pics_base}/{self.pics[self.idxL]}")
+        self.imgDisplayR._image_ref_origin = Image.open(f"{self.pics_base}/{self.pics[self.idxR]}")
         self.resize_and_set_image(self.imgDisplayL, None)
         self.resize_and_set_image(self.imgDisplayR, None)
 
+    def next_feature_or_compair(self, skip=False):
+        self.featureIdx += 1
+        if self.featureIdx >= len(self.features) or skip:
+            if not skip:
+                self.record.add_compair_result((self.idxL, self.idxR), self.features, self.compairResult)
+            self.compairResult = {}
+            self.featureIdx = 0
+            self.new_compair()
+        else:
+            self.update_compair_features()
+
     def compair_skip(self):
-        self.new_compair()
+        self.next_feature_or_compair(skip=True)
+
+    def compair_none(self):
+        if self.idxL and self.idxR:
+            self.compairResult[self.features[self.featureIdx]] = "none"
+            self.next_feature_or_compair()
 
     def compair_left(self):
-        print(f"{self.idxL[0]}>{self.idxR[0]}")
-        self.new_compair()
+        if self.idxL and self.idxR:
+            self.compairResult[self.features[self.featureIdx]] = "left"
+            self.next_feature_or_compair()
 
     def compair_right(self):
-        print(f"{self.idxL[0]}<{self.idxR[0]}")
-        self.new_compair()
+        if self.idxL and self.idxR:
+            self.compairResult[self.features[self.featureIdx]] = "right"
+            self.next_feature_or_compair()
 
     def compair_both(self):
-        print(f"{self.idxL[0]}={self.idxR[0]}")
-        self.new_compair()
-
-    def output_compair_result(self):
-        pass #TODO needs more complicated compare pattern
+        if self.idxL and self.idxR:
+            self.compairResult[self.features[self.featureIdx]] = "both"
+            self.next_feature_or_compair()
 
 
 def get_number_files_list(target_dir):
@@ -214,6 +284,9 @@ def main():
     record_path = os.path.abspath(args.record)
 
     comp_features = args.features.split(",") if args.features else []
+    if not all(bool(re.match(r"^[a-zA-Z0-9]+$", feature)) for feature in comp_features):
+        print("ERROR: non alpha-numeric features are not supported")
+        exit()
 
     app = App(pics_base, pics, record_path, comp_features)
     app.root.mainloop()
