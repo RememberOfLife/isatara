@@ -70,6 +70,15 @@ class App:
         imgIdxLabelL = tk.Label(imgIdxLabelContainerL, bg="black", fg="aliceblue", text="-", padx=3, pady=1)
         imgIdxLabelL.pack(anchor="e")
 
+        imgFeatureHighlightContainerL = tk.Frame(imgFrameL, bg="lightyellow", pady=10)
+        imgFeatureHighlightContainerL.place(anchor="nw", relx=0, rely=0, relwidth=1, relheight=1)
+        imgFeatureHighlightContainerL.lower()
+        imgFeatureHighlightContainerL.highlights = []
+        for i in range(len(comp_features)):
+            imgFeatureHighlight = tk.Label(imgFeatureHighlightContainerL, bg="lightyellow", text="")
+            imgFeatureHighlight.pack(anchor="n", expand=True, fill="both")
+            imgFeatureHighlightContainerL.highlights += [imgFeatureHighlight]
+
         imgFrameR = tk.Frame(compairFrame, bg="lightyellow")
         imgFrameR.grid(row=0, column=1, sticky="nsew")
 
@@ -82,6 +91,15 @@ class App:
         imgIdxLabelR = tk.Label(imgIdxLabelContainerR, bg="black", fg="aliceblue", text="-", padx=3, pady=1)
         imgIdxLabelR.pack(anchor="w")
 
+        imgFeatureHighlightContainerR = tk.Frame(imgFrameR, bg="lightyellow", pady=10)
+        imgFeatureHighlightContainerR.place(anchor="nw", relx=0, rely=0, relwidth=1, relheight=1)
+        imgFeatureHighlightContainerR.lower()
+        imgFeatureHighlightContainerR.highlights = []
+        for i in range(len(comp_features)):
+            imgFeatureHighlight = tk.Label(imgFeatureHighlightContainerR, bg="lightyellow", text="")
+            imgFeatureHighlight.pack(anchor="n", expand=True, fill="both")
+            imgFeatureHighlightContainerR.highlights += [imgFeatureHighlight]
+
         compairFrame.bind("<r>", lambda event: self.compair_skip())
         compairFrame.bind("<s>", lambda event: self.compair_none())
         compairFrame.bind("<w>", lambda event: self.compair_both())
@@ -92,6 +110,7 @@ class App:
         tk.Label(metaevalFrame, text="meta-eval").pack()
         #TODO
 
+        root.bind("<space>", lambda event: self.toggle_overlay())
         root.bind("<m>", lambda event: self.switch_mode())
         root.bind("<q>", lambda event: exit())
 
@@ -106,10 +125,13 @@ class App:
         self.imgDisplayR = imgDisplayR
         self.imgIdxLabelL = imgIdxLabelL
         self.imgIdxLabelR = imgIdxLabelR
+        self.imgFeatureHighlightContainerL = imgFeatureHighlightContainerL
+        self.imgFeatureHighlightContainerR = imgFeatureHighlightContainerR
         self.idxL = None
         self.idxR = None
         self.featureIdx = 0
         self.compairResult = {}
+        self.overlay = True
         self.switch_mode("compair")
 
     def switch_mode(self, target_mode=None):
@@ -131,6 +153,10 @@ class App:
         else:
             print("ERROR: unknown mode")
             exit()
+
+    def toggle_overlay(self):
+        self.overlay = not self.overlay
+        self.update_compair_features()
 
     def resize_and_set_image(self, imgDisplay, event):
         # get elem width and heigh
@@ -161,16 +187,29 @@ class App:
         self.update_compair_features()
 
     def update_compair_features(self):
+        for highlightFrame in [self.imgFeatureHighlightContainerL, self.imgFeatureHighlightContainerR]:
+            if len(self.features) < 2:
+                continue
+            for i, highlight in enumerate(highlightFrame.highlights):
+                if i == self.featureIdx and self.overlay:
+                    highlight.config(bg="blueviolet")
+                else:
+                    highlight.config(bg="lightyellow")
+
         for imgDisplay, whichDisplay in [(self.imgDisplayL, "left"), (self.imgDisplayR, "right")]:
             imgDisplay.delete("FEATURE")
             imgDisplay._image_ref_tk_features = []
-            if len(self.features) < 2:
+            if not self.overlay or len(self.features) < 2:
                 continue
             elem_width = imgDisplay.winfo_width()
             elem_height = imgDisplay.winfo_height()
             perFeatureHeight = elem_height // len(self.features)
             for i in range(len(self.features)):
-                featureImg = Image.new("RGBA", (elem_width, perFeatureHeight), (0, 0, 0, 30))
+                if i > self.featureIdx:
+                    continue
+                if i != self.featureIdx:
+                    continue #TODO remove this, and maybe show a shadow for already decided features?
+                featureImg = Image.new("RGBA", (elem_width, perFeatureHeight + (1 if i == len(self.features) - 1 else 0)), (0, 0, 0, 50))
                 featureDraw = ImageDraw.Draw(featureImg)
                 featureFontSize = perFeatureHeight * 0.8
                 featureFont = ImageFont.load_default(featureFontSize)
@@ -181,7 +220,7 @@ class App:
                 if text_width > elem_width * horizontal_fill_ratio:
                     featureFontSize = featureFontSize * ((elem_width * horizontal_fill_ratio) / text_width)
                     featureFont = ImageFont.load_default(featureFontSize)
-                featureDraw.text((elem_width/2, perFeatureHeight/2), featureStr, anchor="mm", fill=(255, 255, 255, 30), stroke_width=3, stroke_fill=(0, 0, 0, 60), font=featureFont)
+                featureDraw.text((elem_width/2, perFeatureHeight/2), featureStr, anchor="mm", fill=(255, 255, 255, 50), stroke_width=3, stroke_fill=(0, 0, 0, 100), font=featureFont)
                 featureImgTk = ImageTk.PhotoImage(featureImg)
                 imgDisplay._image_ref_tk_features += [featureImgTk]
                 imgDisplay.create_image(0, perFeatureHeight * self.featureIdx, image=featureImgTk, anchor="nw", tags="FEATURE")
