@@ -47,16 +47,11 @@ class App:
         else:
             root.title(f"Pairwise Scoring: {", ".join(comp_features)}")
         
-
-
         compairFrame = tk.Frame(root)
 
         compairFrame.grid_rowconfigure(0, weight=2)
-        # compairFrame.grid_rowconfigure(1, weight=1)
         compairFrame.grid_columnconfigure(0, weight=1)
         compairFrame.grid_columnconfigure(1, weight=1)
-
-        #TODO purple border between frames which highlights the relative location of the feature to compare
 
         imgFrameL = tk.Frame(compairFrame, bg="lightyellow")
         imgFrameL.grid(row=0, column=0, sticky="nsew")
@@ -105,12 +100,13 @@ class App:
         compairFrame.bind("<w>", lambda event: self.compair_both())
         compairFrame.bind("<a>", lambda event: self.compair_left())
         compairFrame.bind("<d>", lambda event: self.compair_right())
+        if len(comp_features) > 1:
+            compairFrame.bind("<space>", lambda event: self.toggle_overlay())
 
         metaevalFrame = tk.Frame(root)
         tk.Label(metaevalFrame, text="meta-eval").pack()
         #TODO
 
-        root.bind("<space>", lambda event: self.toggle_overlay())
         root.bind("<m>", lambda event: self.switch_mode())
         root.bind("<q>", lambda event: exit())
 
@@ -155,8 +151,9 @@ class App:
             exit()
 
     def toggle_overlay(self):
-        self.overlay = not self.overlay
-        self.update_compair_features()
+        if self.idxL and self.idxR:
+            self.overlay = not self.overlay
+            self.update_compair_features()
 
     def resize_and_set_image(self, imgDisplay, event):
         # get elem width and heigh
@@ -207,23 +204,24 @@ class App:
             for i in range(len(self.features)):
                 if i > self.featureIdx:
                     continue
-                if i != self.featureIdx:
-                    continue #TODO remove this, and maybe show a shadow for already decided features?
-                featureImg = Image.new("RGBA", (elem_width, perFeatureHeight + (1 if i == len(self.features) - 1 else 0)), (0, 0, 0, 50))
+                decided = i < self.featureIdx and self.compairResult[self.features[i]] in ["both", whichDisplay]
+                if not decided and i < self.featureIdx:
+                    continue
+                featureImg = Image.new("RGBA", (elem_width, perFeatureHeight + (1 if i == len(self.features) - 1 else 0)), (0, 0, 0, 50) if not decided else (0, 0, 0, 0))
                 featureDraw = ImageDraw.Draw(featureImg)
                 featureFontSize = perFeatureHeight * 0.8
                 featureFont = ImageFont.load_default(featureFontSize)
-                featureStr = f"{self.features[self.featureIdx]}"
+                featureStr = f"{self.features[i]}"
                 #TODO looks very good with all caps feature names, but we could also measure the str and center it manually (unreasonable effort though)
                 text_width, text_height = PILmeasureText(featureStr, featureFont)
                 horizontal_fill_ratio = 0.9
                 if text_width > elem_width * horizontal_fill_ratio:
                     featureFontSize = featureFontSize * ((elem_width * horizontal_fill_ratio) / text_width)
                     featureFont = ImageFont.load_default(featureFontSize)
-                featureDraw.text((elem_width/2, perFeatureHeight/2), featureStr, anchor="mm", fill=(255, 255, 255, 50), stroke_width=3, stroke_fill=(0, 0, 0, 100), font=featureFont)
+                featureDraw.text((elem_width/2, perFeatureHeight/2), featureStr, anchor="mm", fill=(255, 255, 255, 50), stroke_width=3, stroke_fill=(0, 0, 0, 100) if not decided else (0, 0, 0, 50), font=featureFont)
                 featureImgTk = ImageTk.PhotoImage(featureImg)
                 imgDisplay._image_ref_tk_features += [featureImgTk]
-                imgDisplay.create_image(0, perFeatureHeight * self.featureIdx, image=featureImgTk, anchor="nw", tags="FEATURE")
+                imgDisplay.create_image(0, perFeatureHeight * i, image=featureImgTk, anchor="nw", tags="FEATURE")
 
     def new_compair(self):
         # pick new idcs for compair
@@ -260,22 +258,22 @@ class App:
         self.next_feature_or_compair(skip=True)
 
     def compair_none(self):
-        if self.idxL and self.idxR:
+        if self.idxL and self.idxR and self.overlay:
             self.compairResult[self.features[self.featureIdx]] = "none"
             self.next_feature_or_compair()
 
     def compair_left(self):
-        if self.idxL and self.idxR:
+        if self.idxL and self.idxR and self.overlay:
             self.compairResult[self.features[self.featureIdx]] = "left"
             self.next_feature_or_compair()
 
     def compair_right(self):
-        if self.idxL and self.idxR:
+        if self.idxL and self.idxR and self.overlay:
             self.compairResult[self.features[self.featureIdx]] = "right"
             self.next_feature_or_compair()
 
     def compair_both(self):
-        if self.idxL and self.idxR:
+        if self.idxL and self.idxR and self.overlay:
             self.compairResult[self.features[self.featureIdx]] = "both"
             self.next_feature_or_compair()
 
