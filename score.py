@@ -21,16 +21,33 @@ def PILmeasureText(text_string, font):
 class Record:
 
     def __init__(self, pics, savepath):
+        self.pic_ids = [pic[0] for pic in pics]
         self.savepath = savepath
+        self.entries = []
+        self.load()
+
+    def load(self):
+        #TODO load from savepath
+        pass
 
     def save(self):
+        #TODO append to savefile
         pass
 
     def get_new_compair(self, features):
-        pass
+        avoidPair = (-1, -1)
+        if len(self.entries) > 0:
+            avoidPair = sorted(self.entries[-1][0])
+        newIdxL = random.choice(self.pic_ids)
+        newIdxR = random.choice(self.pic_ids)
+        while newIdxL == newIdxR or avoidPair == sorted([newIdxL, newIdxR]):
+            newIdxR = random.choice(self.pic_ids)
+        return (newIdxL, newIdxR)
 
     def add_compair_result(self, compair, features, result):
-        pass
+        for feature in features:
+            self.entries += [(compair, result[feature])]
+        print(self.entries)
 
 
 class App:
@@ -225,15 +242,7 @@ class App:
 
     def new_compair(self):
         # pick new idcs for compair
-        avoidL = -1
-        avoidR = -1
-        if self.idxL and self.idxR:
-            avoidL = self.idxL
-            avoidR = self.idxR
-        self.idxL = random.choice(list(self.pics.keys()))
-        self.idxR = random.choice(list(self.pics.keys()))
-        while self.idxL == self.idxR or sorted([avoidL, avoidR]) == sorted([self.idxL, self.idxR]):
-            self.idxR = random.choice(list(self.pics.keys()))
+        self.idxL, self.idxR = self.record.get_new_compair(self.features)
         # set label for img stats
         self.imgIdxLabelL.config(text=f"{self.idxL}")
         self.imgIdxLabelR.config(text=f"{self.idxR}")
