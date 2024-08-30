@@ -283,6 +283,7 @@ class App:
             self.compairResult = {}
             self.featureIdx = 0
             self.new_compair()
+            self.record.save()
         else:
             self.update_compair_features()
 
@@ -357,7 +358,7 @@ def main():
     record_path = os.path.abspath(args.record)
 
     comp_features = args.features.split(",") if args.features else []
-    if not all(bool(re.match(r"^[a-zA-Z0-9]+$", feature)) for feature in comp_features):
+    if not all(bool(re.match(r"^[a-zA-Z0-9]+$", feature)) or feature == "*" for feature in comp_features):
         print("ERROR: non alpha-numeric features are not supported")
         exit()
 
