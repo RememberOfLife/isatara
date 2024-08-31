@@ -10,13 +10,6 @@ from collections import Counter
 import random
 
 
-#TODO next gen mode toggle, default to random
-#TODO next gen mode: toplist refinement
-#TODO next gen mode: explore
-# ^^ for both of these, weighted sum of importance across multiple features
-#TODO error bars for statistics
-
-
 def PILmeasureText(text_string, font):
     # https://stackoverflow.com/a/46220683/9263761
     ascent, descent = font.getmetrics()
@@ -49,9 +42,10 @@ class Record:
             self.idxR = int(idxR)
             self.result = str(result)
 
-    def __init__(self, pics, savepath):
+    def __init__(self, pics, savepath, compair_mode):
         self.pic_ids = sorted([pic[0] for pic in pics])
         self.savepath = savepath
+        self.compair_mode = compair_mode
         self.entries = []
         self.saved_idx = 0
         self.statistics = {}
@@ -81,16 +75,18 @@ class Record:
         self.saved_idx = len(self.entries)
 
     def get_new_compair(self, features):
-        # avoidPair = (-1, -1)
-        # if len(self.entries) > 0:
-        #     avoidPair = sorted((self.entries[-1].idxL, self.entries[-1].idxR))
-        # newIdxL = random.choice(self.pic_ids)
-        # newIdxR = random.choice(self.pic_ids)
-        # while newIdxL == newIdxR or avoidPair == sorted([newIdxL, newIdxR]):
-        #     newIdxR = random.choice(self.pic_ids)
+        #TODO we also need to return the features which are allowed to be compared
         if len(self.possible_combinations) == 0:
             return (None, None)
-        pair = random.choice(list(self.possible_combinations.keys()))
+        #TODO mode impls
+        if self.compair_mode == "smart":
+            pass # one favored and one uncertain
+        elif self.compair_mode == "refine":
+            pass
+        elif self.compair_mode == "explore":
+            pass
+        else:
+            pair = random.choice(list(self.possible_combinations.keys()))
         newIdxL, newIdxR = pair
         del self.possible_combinations[pair]
         return (newIdxL, newIdxR)
@@ -124,31 +120,45 @@ class Record:
             else:
                 self.statistics[recordentry.feature][idx].pref_loss += 1
 
-    def calculate_feature_toplist(self, feature):
+    #TODO maybe weight for features
+    def calculate_feature_toplist(self, features):
+        if not type(features) is list:
+            features = [features]
         #TODO do pagerank..
         toplist = []
-        if feature not in self.statistics:
-            return toplist
-        for idx, sentry in self.statistics[feature].items():
-            wins = sentry.pref_win + sentry.share_win
-            losses = sentry.pref_loss + sentry.unfit_loss
-            totals = wins + losses
-            local_certainty = totals / (len(self.pic_ids) - 1)
-            probable_error = 1 - (local_certainty) #TODO could set to just one to be true review
-            wins += probable_error
-            losses += probable_error
-            totals = wins + losses
-            toplist += [(idx, wins / totals, local_certainty)]
+        for feature in features:
+            if feature not in self.statistics:
+                return toplist #TODO can somehow do it with just partial statistics?
+        for idx in self.pic_ids:
+            favor_acc = 0
+            certainty_acc = 0
+            for feature in features:
+                if idx in self.statistics[feature]:
+                    sentry = self.statistics[feature][idx]
+                else:
+                    sentry = self.StatisticsEntry()
+                wins = sentry.pref_win + sentry.share_win
+                losses = sentry.pref_loss + sentry.unfit_loss
+                totals = wins + losses
+                local_certainty = totals / (len(self.pic_ids) - 1)
+                probable_error = 1 - (local_certainty) #TODO could set to just one to be true review
+                wins += probable_error
+                losses += probable_error
+                totals = wins + losses
+                favor_acc += (wins / totals) * (1 / len(features))
+                certainty_acc += local_certainty * (1 / len(features))
+            toplist += [(idx, favor_acc, certainty_acc)]
         toplist.sort(key=lambda x: x[1])
-        return reversed(toplist)
+        toplist = reversed(toplist)
+        return toplist
 
 
 class App:
 
-    def __init__(self, pics_base, pics, record_path, comp_features):
+    def __init__(self, pics_base, pics, record_path, comp_features, compair_mode):
         self.pics_base = pics_base
         self.pics = dict(pics)
-        self.record = Record(pics, record_path)
+        self.record = Record(pics, record_path, compair_mode)
 
         root = tk.Tk()
         if len(comp_features) == 0:
@@ -246,14 +256,12 @@ class App:
     def quit(self):
         #TODO move this into proper panel
         for feature in self.record.statistics:
-            print(f"feature: {feature}")
-            for idx in self.record.statistics[feature]:
-                sentry = self.record.statistics[feature][idx]
-                print(f"\t[{idx}]: pw:{sentry.pref_win} / pl:{sentry.pref_loss} / sw:{sentry.share_win} / ul:{sentry.unfit_loss}")
-        for feature in self.features:
             print(f"feature toplist: {feature}")
             for tlentry in self.record.calculate_feature_toplist(feature):
                 print(f"\t[{tlentry[0]}] ({tlentry[1]*100 :.2f}% ~ {tlentry[2]*100 :.2f}%)")
+        print(f"general toplist:")
+        for tlentry in self.record.calculate_feature_toplist(list(self.record.statistics.keys())):
+            print(f"\t[{tlentry[0]}] ({tlentry[1]*100 :.2f}% ~ {tlentry[2]*100 :.2f}%)")
         exit()
 
     def switch_mode(self, target_mode=None):
@@ -308,7 +316,7 @@ class App:
             tk_image = ImageTk.PhotoImage(image)
             imgDisplay._image_ref_tk = tk_image
             imgDisplay.create_image(elem_width / 2, elem_height / 2, image=tk_image, anchor="center", tags="IMG")
-        self.update_compair_features()
+            self.update_compair_features()
 
     def update_compair_features(self):
         for highlightFrame in [self.imgFeatureHighlightContainerL, self.imgFeatureHighlightContainerR]:
@@ -323,10 +331,12 @@ class App:
         for imgDisplay, whichDisplay in [(self.imgDisplayL, "left"), (self.imgDisplayR, "right")]:
             imgDisplay.delete("FEATURE")
             imgDisplay._image_ref_tk_features = []
-            if not self.overlay or len(self.features) < 2:
+            if not self.overlay or len(self.features) < 2: #TODO if only one feature is allowed, DO show the overlay, if we have multiple general features
                 continue
             elem_width = imgDisplay.winfo_width()
             elem_height = imgDisplay.winfo_height()
+            if elem_width < 10 or elem_height < 10:
+                continue
             perFeatureHeight = elem_height // len(self.features)
             for i in range(len(self.features)):
                 if i > self.featureIdx:
@@ -444,6 +454,7 @@ def main():
     parser.add_argument("--pictures", required=True, metavar="PATH", help="path to picture directory")
     parser.add_argument("--record", required=True, metavar="RECORD", help="record file for comparison log")
     parser.add_argument("--features", required=False, metavar="FEATURES", help="comma-separated list of comparison features")
+    parser.add_argument("--compair-mode", required=False, choices=["random", "refine", "explore", "smart"], default="random", metavar="COMPAIR_MODE", help="strategy for offering compairs, can be one of: random, refine, explore, smart")
     args = parser.parse_args()
     
     pics_base = os.path.abspath(args.pictures)
@@ -456,7 +467,7 @@ def main():
         print("ERROR: non alpha-numeric features are not supported")
         exit()
 
-    app = App(pics_base, pics, record_path, comp_features)
+    app = App(pics_base, pics, record_path, comp_features, args.compair_mode)
     app.root.mainloop()
 
 
