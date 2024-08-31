@@ -10,6 +10,13 @@ from collections import Counter
 import random
 
 
+#TODO next gen mode toggle, default to random
+#TODO next gen mode: toplist refinement
+#TODO next gen mode: explore
+# ^^ for both of these, weighted sum of importance across multiple features
+#TODO error bars for statistics
+
+
 def PILmeasureText(text_string, font):
     # https://stackoverflow.com/a/46220683/9263761
     ascent, descent = font.getmetrics()
@@ -20,31 +27,52 @@ def PILmeasureText(text_string, font):
 
 class Record:
 
+    class StatisticsEntry:
+        pref_win: int
+        pref_loss: int
+        share_win: int
+        unfit_loss: int
+        def __init__(self):
+            self.pref_win = 0
+            self.pref_loss = 0
+            self.share_win = 0
+            self.unfit_loss = 0
+
     class RecordEntry:
         feature: str
         idxL: int
         idxR: int
         result: str
         def __init__(self, feature, idxL, idxR, result):
-            self.feature = feature
-            self.idxL = idxL
-            self.idxR = idxR
-            self.result = result
+            self.feature = str(feature)
+            self.idxL = int(idxL)
+            self.idxR = int(idxR)
+            self.result = str(result)
 
     def __init__(self, pics, savepath):
-        self.pic_ids = [pic[0] for pic in pics]
+        self.pic_ids = sorted([pic[0] for pic in pics])
         self.savepath = savepath
         self.entries = []
         self.saved_idx = 0
+        self.statistics = {}
+        self.possible_combinations = {}
+        for i, id1 in enumerate(self.pic_ids):
+            for j, id2 in enumerate(self.pic_ids[i+1:]):
+                self.possible_combinations[(id1, id2)] = None
         self.load()
 
     def load(self):
         if os.path.exists(self.savepath):
             with open(self.savepath) as file:
                 for line in file:
-                    feature, idxL, idxR, result = line.split(",")
+                    feature, idxL, idxR, result = line.strip().split(",")
                     self.entries += [self.RecordEntry(feature, idxL, idxR, result)]
             self.saved_idx = len(self.entries)
+            for entry in self.entries:
+                self.statistics_add_entry(entry)
+                cpair = tuple(sorted((entry.idxL, entry.idxR)))
+                if cpair in self.possible_combinations:
+                    del self.possible_combinations[cpair]
 
     def save(self):
         with open(self.savepath, "a") as file:
@@ -53,13 +81,18 @@ class Record:
         self.saved_idx = len(self.entries)
 
     def get_new_compair(self, features):
-        avoidPair = (-1, -1)
-        if len(self.entries) > 0:
-            avoidPair = sorted((self.entries[-1].idxL, self.entries[-1].idxR))
-        newIdxL = random.choice(self.pic_ids)
-        newIdxR = random.choice(self.pic_ids)
-        while newIdxL == newIdxR or avoidPair == sorted([newIdxL, newIdxR]):
-            newIdxR = random.choice(self.pic_ids)
+        # avoidPair = (-1, -1)
+        # if len(self.entries) > 0:
+        #     avoidPair = sorted((self.entries[-1].idxL, self.entries[-1].idxR))
+        # newIdxL = random.choice(self.pic_ids)
+        # newIdxR = random.choice(self.pic_ids)
+        # while newIdxL == newIdxR or avoidPair == sorted([newIdxL, newIdxR]):
+        #     newIdxR = random.choice(self.pic_ids)
+        if len(self.possible_combinations) == 0:
+            return (None, None)
+        pair = random.choice(list(self.possible_combinations.keys()))
+        newIdxL, newIdxR = pair
+        del self.possible_combinations[pair]
         return (newIdxL, newIdxR)
 
     def add_compair_result(self, compair, feature, result):
@@ -69,7 +102,45 @@ class Record:
             "left": ">",
             "right": "<",
         }
-        self.entries += [self.RecordEntry(feature, *compair, resultTypes[result])]
+        new_entry = self.RecordEntry(feature, *compair, resultTypes[result])
+        self.entries += [new_entry]
+        self.statistics_add_entry(new_entry)
+        cpair = tuple(sorted((new_entry.idxL, new_entry.idxR)))
+        if cpair in self.possible_combinations:
+            del self.possible_combinations[cpair]
+
+    def statistics_add_entry(self, recordentry):
+        if recordentry.feature not in self.statistics:
+            self.statistics[recordentry.feature] = {}
+        for idx, dir in [(recordentry.idxL, ">"), (recordentry.idxR, "<")]:
+            if idx not in self.statistics[recordentry.feature]:
+                self.statistics[recordentry.feature][idx] = self.StatisticsEntry()
+            if recordentry.result == "=":
+                self.statistics[recordentry.feature][idx].share_win += 1
+            elif recordentry.result == "x":
+                self.statistics[recordentry.feature][idx].unfit_loss += 1
+            elif recordentry.result == dir:
+                self.statistics[recordentry.feature][idx].pref_win += 1
+            else:
+                self.statistics[recordentry.feature][idx].pref_loss += 1
+
+    def calculate_feature_toplist(self, feature):
+        #TODO do pagerank..
+        toplist = []
+        if feature not in self.statistics:
+            return toplist
+        for idx, sentry in self.statistics[feature].items():
+            wins = sentry.pref_win + sentry.share_win
+            losses = sentry.pref_loss + sentry.unfit_loss
+            totals = wins + losses
+            local_certainty = totals / (len(self.pic_ids) - 1)
+            probable_error = 1 - (local_certainty) #TODO could set to just one to be true review
+            wins += probable_error
+            losses += probable_error
+            totals = wins + losses
+            toplist += [(idx, wins / totals, local_certainty)]
+        toplist.sort(key=lambda x: x[1])
+        return reversed(toplist)
 
 
 class App:
@@ -150,7 +221,7 @@ class App:
 
         root.bind("<m>", lambda event: self.switch_mode())
         root.bind("<Shift_L>", lambda event: self.record.save())
-        root.bind("<q>", lambda event: exit())
+        root.bind("<q>", lambda event: self.quit())
 
         self.root = root
         self.compairFrame = compairFrame
@@ -171,6 +242,19 @@ class App:
         self.compairResult = {}
         self.overlay = True
         self.switch_mode("compair")
+
+    def quit(self):
+        #TODO move this into proper panel
+        for feature in self.record.statistics:
+            print(f"feature: {feature}")
+            for idx in self.record.statistics[feature]:
+                sentry = self.record.statistics[feature][idx]
+                print(f"\t[{idx}]: pw:{sentry.pref_win} / pl:{sentry.pref_loss} / sw:{sentry.share_win} / ul:{sentry.unfit_loss}")
+        for feature in self.features:
+            print(f"feature toplist: {feature}")
+            for tlentry in self.record.calculate_feature_toplist(feature):
+                print(f"\t[{tlentry[0]}] ({tlentry[1]*100 :.2f}% ~ {tlentry[2]*100 :.2f}%)")
+        exit()
 
     def switch_mode(self, target_mode=None):
         if not target_mode:
@@ -205,24 +289,25 @@ class App:
         else:
             elem_width = imgDisplay.winfo_width()
             elem_height = imgDisplay.winfo_height()
-        # skip resizing if no image set
-        if imgDisplay._image_ref_origin == None:
-            return
-        # copy original for modification
-        image = imgDisplay._image_ref_origin.copy()
-        # calc the scaling we need to make it fit
-        scale_width = elem_width / image.width
-        scale_height = elem_height / image.height
-        scale = min(scale_width, scale_height)
-        # calc new with from scaling and resize
-        new_width = int(image.width * scale)
-        new_height = int(image.height * scale)
-        image = image.resize((new_width, new_height), Image.LANCZOS)
-        # set image to canvas
-        tk_image = ImageTk.PhotoImage(image)
-        imgDisplay._image_ref_tk = tk_image
+        # drop ref and img
+        imgDisplay._image_ref_tk = None
         imgDisplay.delete("IMG")
-        imgDisplay.create_image(elem_width / 2, elem_height / 2, image=tk_image, anchor="center", tags="IMG")
+        # resizing only if image set
+        if imgDisplay._image_ref_origin:
+            # copy original for modification
+            image = imgDisplay._image_ref_origin.copy()
+            # calc the scaling we need to make it fit
+            scale_width = elem_width / image.width
+            scale_height = elem_height / image.height
+            scale = min(scale_width, scale_height)
+            # calc new with from scaling and resize
+            new_width = int(image.width * scale)
+            new_height = int(image.height * scale)
+            image = image.resize((new_width, new_height), Image.LANCZOS)
+            # set image to canvas
+            tk_image = ImageTk.PhotoImage(image)
+            imgDisplay._image_ref_tk = tk_image
+            imgDisplay.create_image(elem_width / 2, elem_height / 2, image=tk_image, anchor="center", tags="IMG")
         self.update_compair_features()
 
     def update_compair_features(self):
@@ -268,12 +353,21 @@ class App:
     def new_compair(self):
         # pick new idcs for compair
         self.idxL, self.idxR = self.record.get_new_compair(self.features)
-        # set label for img stats
-        self.imgIdxLabelL.config(text=f"{self.idxL}")
-        self.imgIdxLabelR.config(text=f"{self.idxR}")
-        # load and set images
-        self.imgDisplayL._image_ref_origin = Image.open(f"{self.pics_base}/{self.pics[self.idxL]}")
-        self.imgDisplayR._image_ref_origin = Image.open(f"{self.pics_base}/{self.pics[self.idxR]}")
+        if self.idxL and self.idxR:
+            # set label for img stats
+            self.imgIdxLabelL.config(text=f"{self.idxL}")
+            self.imgIdxLabelR.config(text=f"{self.idxR}")
+            # load and set images
+            self.imgDisplayL._image_ref_origin = Image.open(f"{self.pics_base}/{self.pics[self.idxL]}")
+            self.imgDisplayR._image_ref_origin = Image.open(f"{self.pics_base}/{self.pics[self.idxR]}")
+        else:
+            # reset label
+            self.imgIdxLabelL.config(text="-")
+            self.imgIdxLabelR.config(text="-")
+            # drop images1
+            self.imgDisplayL._image_ref_origin = None
+            self.imgDisplayR._image_ref_origin = None
+        # force redraw
         self.resize_and_set_image(self.imgDisplayL, None)
         self.resize_and_set_image(self.imgDisplayR, None)
 
