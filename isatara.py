@@ -52,7 +52,7 @@ class Record:
         self.possible_combinations = {}
         for i, id1 in enumerate(self.pic_ids):
             for j, id2 in enumerate(self.pic_ids[i+1:]):
-                self.possible_combinations[(id1, id2)] = None
+                self.possible_combinations[(id1, id2)] = set()
         self.load()
 
     def load(self):
@@ -65,8 +65,14 @@ class Record:
             for entry in self.entries:
                 self.statistics_add_entry(entry)
                 cpair = tuple(sorted((entry.idxL, entry.idxR)))
-                if cpair in self.possible_combinations:
-                    del self.possible_combinations[cpair]
+                if entry.feature not in self.possible_combinations[cpair]:
+                    self.possible_combinations[cpair].add(entry.feature)
+                else:
+                    #TODO feature registered twice for the same compair
+                    pass
+                #TODO if we had the whole feature list up front, remove entries we're done with, here
+                # if cpair in self.possible_combinations:
+                #     del self.possible_combinations[cpair]
 
     def save(self):
         with open(self.savepath, "a") as file:
@@ -75,21 +81,21 @@ class Record:
         self.saved_idx = len(self.entries)
 
     def get_new_compair(self, features):
-        #TODO we also need to return the features which are allowed to be compared
-        if len(self.possible_combinations) == 0:
-            return (None, None)
-        #TODO mode impls
+        features_sl = features
+        features = set(features)
+        available_combinations = dict([(cpair, features.difference(avfeatures)) for cpair, avfeatures in self.possible_combinations.items() if not features.issubset(avfeatures)])
+        if len(available_combinations) == 0:
+            return (None, None, [])
+        #TODO for this we need to get elements from the toplist which are not already paired, this requires some more logic..
         if self.compair_mode == "smart":
-            pass # one favored and one uncertain
+            pass #TODO one favored and one uncertain
         elif self.compair_mode == "refine":
-            pass
+            pass #TODO top from toplist by favor
         elif self.compair_mode == "explore":
-            pass
+            pass #TODO top from toplist by uncertainty
         else:
-            pair = random.choice(list(self.possible_combinations.keys()))
-        newIdxL, newIdxR = pair
-        del self.possible_combinations[pair]
-        return (newIdxL, newIdxR)
+            cpair = random.choice(list(available_combinations.keys()))
+        return (*cpair, sorted(list(available_combinations[cpair]), key=lambda x: features_sl.index(x)))
 
     def add_compair_result(self, compair, feature, result):
         resultTypes = {
@@ -102,8 +108,7 @@ class Record:
         self.entries += [new_entry]
         self.statistics_add_entry(new_entry)
         cpair = tuple(sorted((new_entry.idxL, new_entry.idxR)))
-        if cpair in self.possible_combinations:
-            del self.possible_combinations[cpair]
+        self.possible_combinations[cpair].add(feature)
 
     def statistics_add_entry(self, recordentry):
         if recordentry.feature not in self.statistics:
@@ -121,7 +126,7 @@ class Record:
                 self.statistics[recordentry.feature][idx].pref_loss += 1
 
     #TODO maybe weight for features
-    def calculate_feature_toplist(self, features):
+    def calculate_feature_toplist(self, features, sortby="favor"):
         if not type(features) is list:
             features = [features]
         #TODO do pagerank..
@@ -148,8 +153,14 @@ class Record:
                 favor_acc += (wins / totals) * (1 / len(features))
                 certainty_acc += local_certainty * (1 / len(features))
             toplist += [(idx, favor_acc, certainty_acc)]
-        toplist.sort(key=lambda x: x[1])
-        toplist = reversed(toplist)
+        if sortby == "favor":
+            toplist.sort(key=lambda x: x[1])
+            toplist = reversed(toplist)
+        elif sortby == "confidence":
+            toplist.sort(key=lambda x: x[2])
+            toplist = reversed(toplist)
+        else:
+            print("WARN: unknown sorting style")
         return toplist
 
 
@@ -168,6 +179,7 @@ class App:
             root.title(f"Pairwise Scoring: {", ".join(comp_features)}")
 
         self.features = comp_features
+        self.current_features = []
         
         compairFrame = tk.Frame(root)
 
@@ -316,13 +328,15 @@ class App:
             tk_image = ImageTk.PhotoImage(image)
             imgDisplay._image_ref_tk = tk_image
             imgDisplay.create_image(elem_width / 2, elem_height / 2, image=tk_image, anchor="center", tags="IMG")
-            self.update_compair_features()
+        self.update_compair_features()
 
     def update_compair_features(self):
         for highlightFrame in [self.imgFeatureHighlightContainerL, self.imgFeatureHighlightContainerR]:
-            if len(self.features) < 2:
-                continue
             for i, highlight in enumerate(highlightFrame.highlights):
+                if i < len(self.current_features):
+                    highlight.pack(anchor="n", expand=True, fill="both")
+                else:
+                    highlight.forget()
                 if i == self.featureIdx and self.overlay:
                     highlight.config(bg="blueviolet")
                 else:
@@ -331,24 +345,24 @@ class App:
         for imgDisplay, whichDisplay in [(self.imgDisplayL, "left"), (self.imgDisplayR, "right")]:
             imgDisplay.delete("FEATURE")
             imgDisplay._image_ref_tk_features = []
-            if not self.overlay or len(self.features) < 2: #TODO if only one feature is allowed, DO show the overlay, if we have multiple general features
+            if not self.overlay or len(self.features) < 2 or len(self.current_features) == 0:
                 continue
             elem_width = imgDisplay.winfo_width()
             elem_height = imgDisplay.winfo_height()
             if elem_width < 10 or elem_height < 10:
                 continue
-            perFeatureHeight = elem_height // len(self.features)
-            for i in range(len(self.features)):
+            perFeatureHeight = elem_height // len(self.current_features)
+            for i in range(len(self.current_features)):
                 if i > self.featureIdx:
                     continue
-                decided = i < self.featureIdx and self.compairResult[self.features[i]] in ["both", whichDisplay]
+                decided = i < self.featureIdx and self.compairResult[self.current_features[i]] in ["both", whichDisplay]
                 if not decided and i < self.featureIdx:
                     continue
-                featureImg = Image.new("RGBA", (elem_width, perFeatureHeight + (1 if i == len(self.features) - 1 else 0)), (0, 0, 0, 50) if not decided else (0, 0, 0, 0))
+                featureImg = Image.new("RGBA", (elem_width, perFeatureHeight + (1 if i == len(self.current_features) - 1 else 0)), (0, 0, 0, 50) if not decided else (0, 0, 0, 0))
                 featureDraw = ImageDraw.Draw(featureImg)
                 featureFontSize = perFeatureHeight * 0.8
                 featureFont = ImageFont.load_default(featureFontSize)
-                featureStr = f"{self.features[i]}"
+                featureStr = f"{self.current_features[i]}"
                 #TODO looks very good with all caps feature names, but we could also measure the str and center it manually (unreasonable effort though)
                 text_width, text_height = PILmeasureText(featureStr, featureFont)
                 horizontal_fill_ratio = 0.9
@@ -362,7 +376,7 @@ class App:
 
     def new_compair(self):
         # pick new idcs for compair
-        self.idxL, self.idxR = self.record.get_new_compair(self.features)
+        self.idxL, self.idxR, self.current_features = self.record.get_new_compair(self.features)
         if self.idxL and self.idxR:
             # set label for img stats
             self.imgIdxLabelL.config(text=f"{self.idxL}")
@@ -383,7 +397,7 @@ class App:
 
     def next_feature_or_compair(self, skip=False):
         self.featureIdx += 1
-        if self.featureIdx >= len(self.features) or skip:
+        if self.featureIdx >= len(self.current_features) or skip:
             self.compairResult = {}
             self.featureIdx = 0
             self.new_compair()
@@ -396,26 +410,26 @@ class App:
 
     def compair_none(self):
         if self.idxL and self.idxR and self.overlay:
-            self.compairResult[self.features[self.featureIdx]] = "none"
-            self.record.add_compair_result((self.idxL, self.idxR), self.features[self.featureIdx], "none")
+            self.compairResult[self.current_features[self.featureIdx]] = "none"
+            self.record.add_compair_result((self.idxL, self.idxR), self.current_features[self.featureIdx], "none")
             self.next_feature_or_compair()
 
     def compair_left(self):
         if self.idxL and self.idxR and self.overlay:
-            self.compairResult[self.features[self.featureIdx]] = "left"
-            self.record.add_compair_result((self.idxL, self.idxR), self.features[self.featureIdx], "left")
+            self.compairResult[self.current_features[self.featureIdx]] = "left"
+            self.record.add_compair_result((self.idxL, self.idxR), self.current_features[self.featureIdx], "left")
             self.next_feature_or_compair()
 
     def compair_right(self):
         if self.idxL and self.idxR and self.overlay:
-            self.compairResult[self.features[self.featureIdx]] = "right"
-            self.record.add_compair_result((self.idxL, self.idxR), self.features[self.featureIdx], "right")
+            self.compairResult[self.current_features[self.featureIdx]] = "right"
+            self.record.add_compair_result((self.idxL, self.idxR), self.current_features[self.featureIdx], "right")
             self.next_feature_or_compair()
 
     def compair_both(self):
         if self.idxL and self.idxR and self.overlay:
-            self.compairResult[self.features[self.featureIdx]] = "both"
-            self.record.add_compair_result((self.idxL, self.idxR), self.features[self.featureIdx], "both")
+            self.compairResult[self.current_features[self.featureIdx]] = "both"
+            self.record.add_compair_result((self.idxL, self.idxR), self.current_features[self.featureIdx], "both")
             self.next_feature_or_compair()
 
 
