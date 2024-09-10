@@ -87,6 +87,7 @@ class Record:
         if len(available_combinations) == 0:
             return (None, None, [])
         #TODO for this we need to get elements from the toplist which are not already paired, this requires some more logic..
+        #TODO mode: reconfirm existing pairs
         if self.compair_mode == "smart":
             pass #TODO one favored and one uncertain
         elif self.compair_mode == "refine":
@@ -161,7 +162,7 @@ class Record:
             toplist = reversed(toplist)
         else:
             print("WARN: unknown sorting style")
-        return toplist
+        return list(toplist)
 
 
 class App:
@@ -173,10 +174,13 @@ class App:
 
         root = tk.Tk()
         if len(comp_features) == 0:
-            root.title(f"Pairwise Scoring: <general>")
+            self.title = f"Pairwise Scoring: <general>"
             comp_features = ["*"]
         else:
-            root.title(f"Pairwise Scoring: {", ".join(comp_features)}")
+            self.title = f"Pairwise Scoring: {", ".join(comp_features)}"
+
+        self.cmp_ctr = 0
+        self.update_title(root)
 
         self.features = comp_features
         self.current_features = []
@@ -265,14 +269,19 @@ class App:
         self.overlay = True
         self.switch_mode("compair")
 
+    def update_title(self, root=None):
+        if not root:
+            root = self.root
+        root.title(f"{self.title} (+{self.cmp_ctr})")
+
     def quit(self):
         #TODO move this into proper panel
         for feature in self.record.statistics:
             print(f"feature toplist: {feature}")
-            for tlentry in self.record.calculate_feature_toplist(feature):
+            for tlentry in self.record.calculate_feature_toplist(feature)[:10]:
                 print(f"\t[{tlentry[0]}] ({tlentry[1]*100 :.2f}% ~ {tlentry[2]*100 :.2f}%)")
         print(f"general toplist:")
-        for tlentry in self.record.calculate_feature_toplist(list(self.record.statistics.keys())):
+        for tlentry in self.record.calculate_feature_toplist(list(self.record.statistics.keys()))[:10]:
             print(f"\t[{tlentry[0]}] ({tlentry[1]*100 :.2f}% ~ {tlentry[2]*100 :.2f}%)")
         exit()
 
@@ -396,6 +405,9 @@ class App:
         self.resize_and_set_image(self.imgDisplayR, None)
 
     def next_feature_or_compair(self, skip=False):
+        if not skip:
+            self.cmp_ctr += 1
+            self.update_title()
         self.featureIdx += 1
         if self.featureIdx >= len(self.current_features) or skip:
             self.compairResult = {}

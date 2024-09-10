@@ -11,7 +11,7 @@ Isatara shows you two pictures from the designated source folder, and you have t
 isatara.py --pictures=<path-to-your-pictures> --record=<path-to-the-log-file> [--features=<feature1,feature2,..>]
 ```
 
-The directory with pictures should contain the pictures to score, enumerated with unpadded integers, starting at `1`. That is, e.g.: `1.png 2.jpg 3.png 4.png 4.webp ... 123.png`. Duplicate numbers and discontinuities cause a warning, the program may or may not work then.
+The directory with pictures should contain the pictures to score, enumerated with unpadded integers, starting at `1`. That is, e.g.: `1.png 2.jpg 3.png 4.png 5.webp ... 123.png`. Duplicate numbers and discontinuities cause a warning, the program may or may not work then.
 
 The log file will be used to store the results of comparisons, if it already exists, its contents will be appended with any new comparisons, otherwise it gets created.
 
